@@ -2,6 +2,7 @@ local love = require "love"
 
 local PhaseUI = require "src.ui_phasebar"
 local UIPiles = require "src.ui_piles"
+local ActionStrip = require "src.ui_actionstrip"
 
 local Render = {}
 
@@ -14,6 +15,33 @@ local function drawZone(zone, fonts)
     love.graphics.setFont(fonts.small)
     love.graphics.setColor(0.9, 0.9, 0.95)
     love.graphics.print(zone.name, zone.x + 12, zone.y + 10)
+end
+
+local function drawBadge(x, y, text, r, g, b)
+    love.graphics.setColor(r, g, b)
+    love.graphics.rectangle("fill", x, y, 58, 36, 8, 8)
+    love.graphics.setColor(0, 0, 0, 0.35)
+    love.graphics.rectangle("line", x, y, 58, 36, 8, 8)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.printf(text, x, y + 8, 58, "center")
+end
+
+local function drawStatuses(x, y, tokens)
+    local flags = {}
+    if tokens.stunned then table.insert(flags, "STN") end
+    if tokens.confused then table.insert(flags, "CNF") end
+    if tokens.tough then table.insert(flags, "TGH") end
+    if #flags == 0 then return end
+
+    love.graphics.setColor(0.15, 0.15, 0.22, 0.9)
+    love.graphics.rectangle("fill", x, y, 64, 22 * #flags, 8, 8)
+    love.graphics.setColor(0.8, 0.8, 0.95)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", x, y, 64, 22 * #flags, 8, 8)
+    love.graphics.setFont(love.graphics.getFont())
+    for i, flag in ipairs(flags) do
+        love.graphics.printf(flag, x, y + (i-1)*22 + 4, 64, "center")
+    end
 end
 
 local function formatTypeLine(side)
@@ -121,6 +149,18 @@ local function drawCard(gameId, fonts, card, isSelected, getActiveSide)
         love.graphics.rectangle("line", -3, -3, card.w + 6, card.h + 6, 16, 16)
     end
 
+    local tokens = card.tokens or {}
+    if tokens.damage and tokens.damage > 0 then
+        drawBadge(10, 170, "DMG\n"..tostring(tokens.damage), 0.65, 0.2, 0.2)
+    end
+    if tokens.threat and tokens.threat > 0 then
+        drawBadge(card.w - 68, 170, "THR\n"..tostring(tokens.threat), 0.2, 0.35, 0.6)
+    end
+    if tokens.counters and tokens.counters > 0 then
+        drawBadge(10, card.h - 110, "CNT\n"..tostring(tokens.counters), 0.25, 0.6, 0.25)
+    end
+    drawStatuses(card.w - 72, card.h - 80, tokens)
+
     love.graphics.pop()
 end
 
@@ -130,9 +170,27 @@ local function drawHud(state)
     local hud =
         "Game: " .. state.currentGameId .. "   |   Phase: " .. PhaseUI.currentPhaseName(state) .. "\n" ..
         "Keys: [1] Marvel  [2] LOTR  [3] Arkham  [4] Ashes PvE   |   [N] Next Phase\n" ..
-        "Mouse: Left-drag move  |  Right-click flip  |  Wheel: scroll hand\n" ..
-        "Selected: [E] Exhaust/Ready   |   [D] Discard Selected"
+        "Mouse: Left-drag move  |  Right-click flip  |  Wheel: scroll hand  |  [Z] Zoom toggle\n" ..
+        "Selected: [E] Exhaust/Ready   |   [D] Discard Selected   |   Damage [+/-]: ]/[   Threat [+/-]: '/;   Status: [S]tunned [C]onfused [T]ough"
     love.graphics.print(hud, 60, state.VIRTUAL_HEIGHT - 170)
+end
+
+local function drawZoom(state, getActiveSide)
+    local card = state.zoomCard
+    if not card then return end
+
+    love.graphics.setColor(0, 0, 0, 0.6)
+    love.graphics.rectangle("fill", 0, 0, state.VIRTUAL_WIDTH, state.VIRTUAL_HEIGHT)
+
+    local original = { x=card.x, y=card.y, w=card.w, h=card.h }
+    card.w = 420
+    card.h = 600
+    card.x = (state.VIRTUAL_WIDTH - card.w) / 2
+    card.y = (state.VIRTUAL_HEIGHT - card.h) / 2
+
+    drawCard(state.currentGameId, state.fonts, card, true, getActiveSide)
+
+    card.x, card.y, card.w, card.h = original.x, original.y, original.w, original.h
 end
 
 function Render.draw(state, getActiveSide)
@@ -142,12 +200,19 @@ function Render.draw(state, getActiveSide)
 
     state.phaseButtons = PhaseUI.draw(state)
 
-    for _, zone in pairs(state.zones) do
-        drawZone(zone, state.fonts)
+    for _, zone in ipairs(state.zoneOrder or {}) do
+        if zone.id ~= "playerDeck" and zone.id ~= "playerDiscard" then
+            drawZone(zone, state.fonts)
+        end
     end
 
-    for _, card in ipairs(state.cards) do
-        drawCard(state.currentGameId, state.fonts, card, card == state.selectedCard, getActiveSide)
+    for _, zone in ipairs(state.zoneOrder or {}) do
+        if zone.id ~= "playerHand" and zone.layout ~= "pile" then
+            local list = state.zoneCards[zone.id] or {}
+            for _, card in ipairs(list) do
+                drawCard(state.currentGameId, state.fonts, card, card == state.selectedCard, getActiveSide)
+            end
+        end
     end
 
     local _, _, drawBtn, discardBtn = UIPiles.drawPilesAndButtons(state)
@@ -166,7 +231,10 @@ function Render.draw(state, getActiveSide)
         drawCard(state.currentGameId, state.fonts, draggedHandCard, draggedHandCard == state.selectedCard, getActiveSide)
     end
 
+    ActionStrip.draw(state)
+
     drawHud(state)
+    drawZoom(state, getActiveSide)
 
     love.graphics.pop()
 end

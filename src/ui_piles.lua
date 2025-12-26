@@ -1,83 +1,90 @@
 local love = require "love"
+local LayoutZones = require "src.layout_zones"
 
 local UIPiles = {}
 
-local function pushToDiscard(state, card)
-    if not card then return end
-    card.zoneId = "playerDiscard"
-    table.insert(state.playerDiscard, card)
-end
-
 function UIPiles.resetPiles(state)
-    state.playerDeck = {}
-    state.playerHand = {}
-    state.playerDiscard = {}
+    state.zoneCards = state.zoneCards or {}
+    state.zoneCards.playerDeck = state.zoneCards.playerDeck or {}
+    state.zoneCards.playerHand = state.zoneCards.playerHand or {}
+    state.zoneCards.playerDiscard = state.zoneCards.playerDiscard or {}
+
+    state.playerDeck = state.zoneCards.playerDeck
+    state.playerHand = state.zoneCards.playerHand
+    state.playerDiscard = state.zoneCards.playerDiscard
+
     state.handScrollX = 0
 end
 
 function UIPiles.drawOne(state)
     if #state.playerDeck == 0 then return end
     local card = table.remove(state.playerDeck)
-    card.zoneId = "playerHand"
+    LayoutZones.moveCard(state, card, "playerHand")
     card.faceUp = true
-    table.insert(state.playerHand, card)
 end
 
 function UIPiles.discardSelected(state)
     local selected = state.selectedCard
     if not selected then return end
 
-    for i = #state.playerHand, 1, -1 do
-        if state.playerHand[i] == selected then
-            local discarded = table.remove(state.playerHand, i)
-            pushToDiscard(state, discarded)
-
-            if #state.playerHand > 0 then
-                local nextIndex = math.min(i, #state.playerHand)
-                state.selectedCard = state.playerHand[nextIndex]
-            else
-                state.selectedCard = nil
+    if selected.zoneId == "playerHand" then
+        local idx = nil
+        for i, c in ipairs(state.playerHand) do
+            if c == selected then
+                idx = i
+                break
             end
+        end
 
-            return
+        LayoutZones.moveCard(state, selected, "playerDiscard")
+
+        if #state.playerHand > 0 and idx then
+            local nextIndex = math.min(idx, #state.playerHand)
+            state.selectedCard = state.playerHand[nextIndex]
+        elseif #state.playerHand == 0 then
+            state.selectedCard = nil
+        end
+
+        return
+    end
+
+    local originZone = selected.zoneId
+    local originList = originZone and state.zoneCards[originZone]
+    local originIndex = nil
+    if originList then
+        for i, c in ipairs(originList) do
+            if c == selected then
+                originIndex = i
+                break
+            end
         end
     end
 
-    for i = #state.cards, 1, -1 do
-        if state.cards[i] == selected then
-            local discarded = table.remove(state.cards, i)
-            pushToDiscard(state, discarded)
+    LayoutZones.moveCard(state, selected, "playerDiscard")
 
-            if #state.cards > 0 then
-                local nextIndex = math.min(i, #state.cards)
-                state.selectedCard = state.cards[nextIndex]
-            else
-                state.selectedCard = nil
-            end
-
-            return
-        end
+    originList = originZone and state.zoneCards[originZone]
+    if originList and #originList > 0 then
+        local nextIndex = originIndex and math.min(originIndex, #originList) or 1
+        state.selectedCard = originList[nextIndex]
+    else
+        state.selectedCard = nil
     end
 end
 
 local function getPileRects(state)
-    local z = state.zones.playerHand
-    if not z then
+    local deckZone = state.zones.playerDeck
+    local discardZone = state.zones.playerDiscard
+
+    if not deckZone or not discardZone then
         local empty = { x=0, y=0, w=0, h=0 }
         return empty, empty, empty, empty
     end
 
-    local padding = 16
-    local x = z.x + padding
-    local y = z.y + padding + 40
-    local pileW = 120
-    local pileH = 160
+    local deckRect = deckZone
+    local discardRect = discardZone
 
-    local deckRect = { x=x, y=y, w=pileW, h=pileH }
-    local discardRect = { x=x, y=y + pileH + 24, w=pileW, h=pileH }
-
-    local drawBtn = { x=x, y=discardRect.y + pileH + 24, w=pileW, h=56 }
-    local discardBtn = { x=x, y=drawBtn.y + 70, w=pileW, h=56 }
+    local drawBtn = { x=deckRect.x, y=discardRect.y + discardRect.h + 24, w=deckRect.w, h=56 }
+    local discardBtn = { x=deckRect.x, y=drawBtn.y + 70, w=deckRect.w, h=56 }
 
     return deckRect, discardRect, drawBtn, discardBtn
 end
