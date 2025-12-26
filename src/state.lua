@@ -14,6 +14,8 @@ local function newState()
         offsetY = 0,
 
         zones = {},
+        zoneOrder = {},
+        zoneCards = {},
         cards = {},
         selectedCard = nil,
 
@@ -21,6 +23,10 @@ local function newState()
         phaseButtons = {},
         drawBtnRect = nil,
         discardBtnRect = nil,
+        actionButtons = {},
+        zoomCard = nil,
+        lastClickTime = nil,
+        lastClickCard = nil,
 
         currentGameId = "marvel",
         phaseIndex = 1,

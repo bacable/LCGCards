@@ -5,10 +5,13 @@ local LayoutZones = require "src.layout_zones"
 local PhaseUI = require "src.ui_phasebar"
 local UIPiles = require "src.ui_piles"
 local CardModel = require "src.model_card"
+local ActionStrip = require "src.ui_actionstrip"
 
 local Input = {}
 
 local function cardAtPosition(state, x, y)
+    if not state.zoneOrder then return nil, nil end
+
     for i = #state.playerHand, 1, -1 do
         local c = state.playerHand[i]
         if x >= c.x and x <= c.x + c.w and y >= c.y and y <= c.y + c.h then
@@ -16,28 +19,20 @@ local function cardAtPosition(state, x, y)
         end
     end
 
-    for i = #state.cards, 1, -1 do
-        local c = state.cards[i]
-        if x >= c.x and x <= c.x + c.w and y >= c.y and y <= c.y + c.h then
-            return c, "board"
+    for i = #state.zoneOrder, 1, -1 do
+        local zone = state.zoneOrder[i]
+        if zone.id ~= "playerHand" and zone.layout ~= "pile" then
+            local list = state.zoneCards[zone.id] or {}
+            for j = #list, 1, -1 do
+                local c = list[j]
+                if x >= c.x and x <= c.x + c.w and y >= c.y and y <= c.y + c.h then
+                    return c, zone.id
+                end
+            end
         end
     end
 
     return nil, nil
-end
-
-local function bringToFront(state, card, where)
-    if where == "hand" then
-        return
-    end
-
-    for i, c in ipairs(state.cards) do
-        if c == card then
-            table.remove(state.cards, i)
-            table.insert(state.cards, card)
-            return
-        end
-    end
 end
 
 function Input.keypressed(state, key, deps)
@@ -50,6 +45,18 @@ function Input.keypressed(state, key, deps)
     if key == "n" then PhaseUI.nextPhase(state) end
     if key == "e" then CardModel.toggleExhaust(state.selectedCard) end
     if key == "d" then UIPiles.discardSelected(state); LayoutZones.layoutHand(state) end
+
+    if key == "z" then
+        state.zoomCard = state.zoomCard and nil or state.selectedCard
+    end
+
+    if key == "[" then CardModel.adjustToken(state.selectedCard, "damage", -1) end
+    if key == "]" then CardModel.adjustToken(state.selectedCard, "damage", 1) end
+    if key == ";" then CardModel.adjustToken(state.selectedCard, "threat", -1) end
+    if key == "'" then CardModel.adjustToken(state.selectedCard, "threat", 1) end
+    if key == "s" then CardModel.toggleStatus(state.selectedCard, "stunned") end
+    if key == "c" then CardModel.toggleStatus(state.selectedCard, "confused") end
+    if key == "t" then CardModel.toggleStatus(state.selectedCard, "tough") end
 end
 
 function Input.wheelmoved(state, dx, dy)
@@ -62,6 +69,20 @@ end
 function Input.mousepressed(state, x, y, button, deps)
     deps = deps or {}
     local vx, vy = Util.toVirtual(state, x, y)
+
+    if state.actionButtons then
+        for _, btn in ipairs(state.actionButtons) do
+            if btn.enabled and Util.pointInRect(vx, vy, btn) then
+                ActionStrip.handleClick(state, btn.id)
+                return
+            end
+        end
+    end
+
+    if state.zoomCard and button == 1 then
+        state.zoomCard = nil
+        return
+    end
 
     for _, btn in ipairs(state.phaseButtons or {}) do
         if Util.pointInRect(vx, vy, btn) then
@@ -84,11 +105,17 @@ function Input.mousepressed(state, x, y, button, deps)
     if button == 1 then
         local card, where = cardAtPosition(state, vx, vy)
         if card then
+            local now = love.timer.getTime()
+            local isDouble = state.lastClickCard == card and state.lastClickTime and (now - state.lastClickTime) < 0.3
+            state.lastClickTime = now
+            state.lastClickCard = card
+            if isDouble then
+                state.zoomCard = card
+            end
             state.selectedCard = card
             card.dragging = true
             card.dragOffsetX = vx - card.x
             card.dragOffsetY = vy - card.y
-            bringToFront(state, card, where)
         else
             state.selectedCard = nil
         end
@@ -107,6 +134,16 @@ end
 function Input.mousereleased(state, x, y, button)
     if button == 1 and state.selectedCard then
         state.selectedCard.dragging = false
+
+        local card = state.selectedCard
+        local cx = card.x + card.w / 2
+        local cy = card.y + card.h / 2
+        local zoneId = LayoutZones.zoneAtPoint(state, cx, cy)
+        if zoneId then
+            LayoutZones.moveCard(state, card, zoneId)
+        else
+            LayoutZones.layoutZone(state, card.zoneId)
+        end
     end
 end
 

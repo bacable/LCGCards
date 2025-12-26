@@ -24,14 +24,19 @@ local function buildSampleCards(gameId, defs)
     local c3 = CardModel.newInstance(state, defs[3])
 
     if gameId == "lotr" then
-        LayoutZones.placeCardsInZone(state.zones, "stagingArea", { c2 })
-        LayoutZones.placeCardsInZone(state.zones, "activeLocation", { c3 })
-        LayoutZones.placeCardsInZone(state.zones, "playerBoard", { c1 })
-        state.cards = { c2, c3, c1 }
+        LayoutZones.moveCard(state, c2, "stagingArea")
+        LayoutZones.moveCard(state, c3, "activeLocation")
+        LayoutZones.moveCard(state, c1, "playerBoard")
     else
-        LayoutZones.placeCardsInZone(state.zones, "encounterBoard", { c2 })
-        LayoutZones.placeCardsInZone(state.zones, "playerBoard", { c1, c3 })
-        state.cards = { c2, c1, c3 }
+        if gameId == "marvel" then
+            LayoutZones.moveCard(state, c2, "villain")
+            LayoutZones.moveCard(state, c3, "encounterBoard")
+            LayoutZones.moveCard(state, c1, "playerIdentity")
+        else
+            LayoutZones.moveCard(state, c2, "encounterBoard")
+            LayoutZones.moveCard(state, c1, "playerBoard")
+            LayoutZones.moveCard(state, c3, "playerBoard")
+        end
     end
 end
 
@@ -47,12 +52,17 @@ end
 local function loadGame(gameId)
     state.currentGameId = gameId
     state.selectedCard = nil
-    state.cards = {}
+    state.zoomCard = nil
     state.nextInstanceId = 1
     state.phaseIndex = 1
 
+    state.zones, state.zoneOrder = LayoutZones.createZonesForGame(gameId)
+    LayoutZones.initZoneCards(state)
     UIPiles.resetPiles(state)
-    state.zones = LayoutZones.createZonesForGame(gameId)
+
+    state.playerHand = state.zoneCards.playerHand or {}
+    state.playerDeck = state.zoneCards.playerDeck or {}
+    state.playerDiscard = state.zoneCards.playerDiscard or {}
 
     local defs = ContentSamples.sampleDefs(gameId)
     if #defs >= 3 then
@@ -60,7 +70,7 @@ local function loadGame(gameId)
     end
 
     fillDemoDeck(gameId)
-    LayoutZones.layoutHand(state)
+    LayoutZones.layoutAll(state)
 end
 
 local function loadInitialState()
